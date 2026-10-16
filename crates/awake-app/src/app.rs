@@ -238,11 +238,14 @@ mod tests {
     type TestApp = App<FakeSleep, FakePower>;
 
     fn temp_config() -> PathBuf {
+        // The macOS wall clock is microsecond-grained, so parallel tests need a counter to stay apart.
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, Ordering::SeqCst);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("awake-app-{}-{nanos}", std::process::id())).join("config.json")
+        std::env::temp_dir().join(format!("awake-app-{}-{nanos}-{n}", std::process::id())).join("config.json")
     }
 
     fn make(config: Config) -> (Arc<TestApp>, Arc<AtomicUsize>, PathBuf) {
