@@ -1,10 +1,13 @@
 //! Awake menu bar app. Logic lives here so it can be tested; `main.rs` only wires things up.
 
-pub mod config;
-pub mod session;
-pub mod helper;
-pub mod sleep;
-pub mod power;
-pub mod metrics;
 pub mod app;
+pub mod config;
+pub mod helper;
 pub mod lid;
+pub mod logging;
+pub mod login_item;
+pub mod menu;
+pub mod metrics;
+pub mod power;
+pub mod session;
+pub mod sleep;
