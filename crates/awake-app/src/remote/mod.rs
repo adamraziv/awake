@@ -4,6 +4,7 @@
 //! socket (start, stop, shutdown) or on `pmset` (screen off, lock).
 
 pub mod auth;
+pub mod server;
 pub mod status;
 
 use std::net::{IpAddr, SocketAddr};

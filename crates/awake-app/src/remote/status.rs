@@ -113,6 +113,7 @@ mod tests {
             battery_guard: true,
             launch_at_login: true,
             note: None,
+            remote_url: None,
         }
     }
 

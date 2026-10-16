@@ -174,6 +174,7 @@ struct Ui {
     note: Retained<NSMenuItem>,
     toggle: Retained<NSMenuItem>,
     helper_line: Retained<NSMenuItem>,
+    remote_line: Retained<NSMenuItem>,
     battery_guard: Retained<NSMenuItem>,
     login_item: Retained<NSMenuItem>,
     icon_idle: Option<Retained<NSImage>>,
@@ -194,6 +195,7 @@ impl Ui {
         }
         self.toggle.setTitle(&NSString::from_str(if m.active { "Stop session" } else { "Start session" }));
         self.helper_line.setTitle(&NSString::from_str(m.helper_line()));
+        self.remote_line.setTitle(&NSString::from_str(&m.remote_line()));
         self.battery_guard.setState(if m.battery_guard { NSControlStateValueOn } else { NSControlStateValueOff });
         self.login_item.setState(if m.launch_at_login { NSControlStateValueOn } else { NSControlStateValueOff });
         if let Some(button) = self.status_item.button(mtm) {
@@ -247,9 +249,11 @@ pub fn install(mtm: MainThreadMarker, app: Arc<RealApp>) {
     let battery_guard = action_item(mtm, "Battery guard (end at 10%)", TAG_BATTERY_GUARD, &target);
     let login_item = action_item(mtm, "Launch at login", TAG_LOGIN_ITEM, &target);
     let helper_line = label_item(mtm, "Helper: not running");
+    let remote_line = label_item(mtm, "Remote: off (no Tailscale)");
     menu.addItem(&battery_guard);
     menu.addItem(&login_item);
     menu.addItem(&helper_line);
+    menu.addItem(&remote_line);
     menu.addItem(&action_item(mtm, "Reveal log", TAG_REVEAL_LOG, &target));
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&action_item(mtm, "Quit Awake", TAG_QUIT, &target));
@@ -269,6 +273,7 @@ pub fn install(mtm: MainThreadMarker, app: Arc<RealApp>) {
         note,
         toggle,
         helper_line,
+        remote_line,
         battery_guard,
         login_item,
         icon_idle,

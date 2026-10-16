@@ -24,9 +24,17 @@ pub struct MenuModel {
     pub battery_guard: bool,
     pub launch_at_login: bool,
     pub note: Option<&'static str>,
+    pub remote_url: Option<String>,
 }
 
 impl MenuModel {
+    pub fn remote_line(&self) -> String {
+        match &self.remote_url {
+            Some(url) => format!("Remote: {url}"),
+            None => "Remote: off (no Tailscale)".to_string(),
+        }
+    }
+
     pub fn status_line(&self) -> String {
         match (self.active, self.remaining) {
             (false, _) => "Awake: Idle".to_string(),
@@ -57,6 +65,7 @@ struct Inner<S: SleepController> {
     helper_connected: bool,
     note: Option<&'static str>,
     metrics: Option<Metrics>,
+    remote_url: Option<String>,
 }
 
 pub struct App<S: SleepController, P: Power> {
@@ -76,7 +85,7 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         refresh: impl Fn() + Send + Sync + 'static,
     ) -> Arc<Self> {
         Arc::new(Self {
-            inner: Mutex::new(Inner { session, config, helper_connected: false, note: None, metrics: None }),
+            inner: Mutex::new(Inner { session, config, helper_connected: false, note: None, metrics: None, remote_url: None }),
             power,
             config_path,
             lid_registered: AtomicBool::new(false),
@@ -192,6 +201,18 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         self.refresh();
     }
 
+    /// From the remote thread when the server binds, moves, or stops (spec 6.1).
+    pub fn set_remote_url(&self, url: Option<String>) {
+        {
+            let mut g = self.lock();
+            if g.remote_url == url {
+                return;
+            }
+            g.remote_url = url;
+        }
+        self.refresh();
+    }
+
     fn save_config(&self, config: &Config) {
         if let Err(e) = config.save(&self.config_path) {
             tracing::warn!("could not save config to {}: {e}", self.config_path.display());
@@ -209,6 +230,7 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
             battery_guard: snap.battery_guard,
             launch_at_login: g.config.launch_at_login,
             note: g.note,
+            remote_url: g.remote_url.clone(),
         }
     }
 
@@ -452,6 +474,7 @@ mod tests {
             battery_guard: true,
             launch_at_login: true,
             note: None,
+            remote_url: None,
         };
         assert_eq!(m.status_line(), "Awake: Idle");
         assert_eq!(m.helper_line(), "Helper: not running");
@@ -492,5 +515,22 @@ mod tests {
         let (app, _, _) = make(Config::default());
         app.screen_off();
         assert_eq!(*app.power().calls.lock().unwrap(), vec!["screen_off"]);
+    }
+
+    #[test]
+    fn remote_url_is_shown_and_refreshes_only_on_change() {
+        let (app, refreshes, _) = make(Config::default());
+        let m = app.menu_model(Instant::now());
+        assert_eq!(m.remote_url, None);
+        assert_eq!(m.remote_line(), "Remote: off (no Tailscale)");
+        app.set_remote_url(Some("http://100.64.0.1:7700".into()));
+        let m = app.menu_model(Instant::now());
+        assert_eq!(m.remote_line(), "Remote: http://100.64.0.1:7700");
+        assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+        app.set_remote_url(Some("http://100.64.0.1:7700".into()));
+        assert_eq!(refreshes.load(Ordering::SeqCst), 1, "same value, no refresh");
+        app.set_remote_url(None);
+        assert_eq!(app.menu_model(Instant::now()).remote_url, None);
+        assert_eq!(refreshes.load(Ordering::SeqCst), 2);
     }
 }

@@ -1,4 +1,4 @@
-//! Wiring only: logging, config, helper keeper, tick thread, lid watcher, AppKit run loop.
+//! Wiring only: logging, config, helper keeper, tick thread, remote server, lid watcher, AppKit run loop.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,6 +10,7 @@ use awake_app::helper::{HelperClient, HelperEvents, PING_INTERVAL, SOCKET_PATH, 
 use awake_app::menu::{self, RealApp};
 use awake_app::metrics::{Collector, SAMPLE_INTERVAL};
 use awake_app::power::SystemPower;
+use awake_app::remote;
 use awake_app::session::Session;
 use awake_app::sleep::RealSleep;
 use awake_app::{lid, logging, login_item};
@@ -99,6 +100,7 @@ fn main() {
     let events = Events { app: app.clone(), helper: helper.clone(), reset_done: AtomicBool::new(false) };
     spawn_keeper(helper, Arc::new(events), PING_INTERVAL);
     spawn_tick(app.clone());
+    remote::server::spawn(app.clone(), config.tailscale_cli.clone());
 
     let nsapp = NSApplication::sharedApplication(mtm);
     nsapp.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
