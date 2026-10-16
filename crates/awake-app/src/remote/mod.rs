@@ -2,3 +2,4 @@
 //! `status.rs` shapes `/api/status`, `server.rs` runs the server; the router lives here (Task 6).
 
 pub mod auth;
+pub mod status;
