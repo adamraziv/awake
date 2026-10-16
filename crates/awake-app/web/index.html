@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Awake</title>
+<style>
+  :root { --bg:#f4f4f6; --card:#ffffff; --fg:#111111; --muted:#666670; --accent:#2f6fed; --ok:#2a9d5c; --danger:#d9303e; --border:#e2e2e6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111214; --card:#1c1d21; --fg:#ededf0; --muted:#9a9aa3; --accent:#5b8dff; --ok:#3ebc74; --danger:#ff5a66; --border:#2a2b31; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 520px; padding: 16px 16px 40px; font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  h1 { font-size: 20px; margin: 4px 0 12px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .banner { display: none; background: var(--danger); color: #fff; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; }
+  .banner.show { display: block; }
+  .state { font-size: 22px; font-weight: 700; }
+  .state.active { color: var(--ok); }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 4px; min-height: 1.2em; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .row + .row { margin-top: 8px; }
+  button { font: inherit; font-size: 15px; min-height: 44px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--fg); flex: 1 1 30%; cursor: pointer; }
+  button:active { opacity: .7; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  button.wide { flex-basis: 100%; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { background: var(--bg); border-radius: 10px; padding: 10px; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
+  .tile .s { color: var(--muted); font-size: 12px; min-height: 1.2em; }
+  .danger-zone { border-color: var(--danger); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Awake</h1>
+<div id="banner" class="banner">Disconnected, retrying…</div>
+
+<section class="card">
+  <div id="state" class="state">…</div>
+  <div id="remaining" class="sub"></div>
+  <div id="flags" class="sub"></div>
+</section>
+
+<section class="card">
+  <h2>Session</h2>
+  <div class="row" id="presets">
+    <button class="primary" data-minutes="30">30 min</button>
+    <button class="primary" data-minutes="60">1 hour</button>
+    <button class="primary" data-minutes="120">2 hours</button>
+    <button class="primary" data-minutes="240">4 hours</button>
+    <button class="primary" data-minutes="480">8 hours</button>
+    <button class="primary" data-minutes="">Until I stop it</button>
+  </div>
+  <div class="row">
+    <button id="stop" class="danger wide hidden">Stop session</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Quick actions</h2>
+  <div class="row">
+    <button data-action="/api/screen/off">Screen off</button>
+    <button data-action="/api/lock">Lock</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Metrics</h2>
+  <div class="tiles">
+    <div class="tile"><div class="k">CPU</div><div class="v" id="m-cpu">–</div><div class="s" id="m-cpu-s"></div></div>
+    <div class="tile"><div class="k">RAM</div><div class="v" id="m-ram">–</div><div class="s" id="m-ram-s"></div></div>
+    <div class="tile"><div class="k">Disk</div><div class="v" id="m-disk">–</div><div class="s" id="m-disk-s"></div></div>
+    <div class="tile"><div class="k">Battery</div><div class="v" id="m-batt">–</div><div class="s" id="m-batt-s"></div></div>
+    <div class="tile"><div class="k" id="m-temp-k">Temp</div><div class="v" id="m-temp">–</div><div class="s" id="m-temp-s"></div></div>
+    <div class="tile"><div class="k">Uptime</div><div class="v" id="m-up">–</div><div class="s" id="m-up-s"></div></div>
+  </div>
+</section>
+
+<section class="card danger-zone">
+  <h2>Danger zone</h2>
+  <div class="row">
+    <button id="shutdown" class="danger wide">Shut down Mac</button>
+    <button id="shutdown-confirm" class="danger wide hidden">Confirm: shut down now</button>
+  </div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var POLL_MS = 5000;
+  var ARM_MS = 8000;
+  var armTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function fmtBytes(n) {
+    if (n == null) return '–';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i >= 3 ? n.toFixed(1) : Math.round(n)) + ' ' + units[i];
+  }
+
+  function fmtDuration(s) {
+    if (s == null) return '–';
+    var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  function pct(used, total) { return total ? Math.round(used / total * 100) + '%' : '–'; }
+
+  function render(st) {
+    var s = st.session;
+    $('state').textContent = s.active ? 'Active' : 'Idle';
+    $('state').classList.toggle('active', s.active);
+    $('remaining').textContent = !s.active ? 'Mac may sleep normally'
+      : s.remaining_seconds == null ? 'Until you stop it'
+      : fmtDuration(s.remaining_seconds) + ' left';
+    var flags = [];
+    if (s.active) flags.push(s.lid_protection ? 'Lid protection on' : 'Lid protection unavailable');
+    if (!st.helper_connected) flags.push('Helper not running');
+    $('flags').textContent = flags.join(' · ');
+    $('stop').classList.toggle('hidden', !s.active);
+
+    var m = st.metrics;
+    if (!m) return;
+    $('m-cpu').textContent = m.cpu_percent == null ? '–' : m.cpu_percent.toFixed(0) + '%';
+    $('m-cpu-s').textContent = m.cpu_cores ? m.cpu_cores + ' cores' : '';
+    $('m-ram').textContent = pct(m.ram_used_bytes, m.ram_total_bytes);
+    $('m-ram-s').textContent = fmtBytes(m.ram_used_bytes) + ' of ' + fmtBytes(m.ram_total_bytes) + (m.memory_pressure ? ' · ' + m.memory_pressure : '');
+    $('m-disk').textContent = pct(m.disk_used_bytes, m.disk_total_bytes);
+    $('m-disk-s').textContent = fmtBytes(m.disk_used_bytes) + ' of ' + fmtBytes(m.disk_total_bytes);
+    $('m-batt').textContent = m.battery_percent == null ? '–' : m.battery_percent + '%';
+    $('m-batt-s').textContent = m.battery_percent == null ? '' : m.charging ? 'charging' : m.on_ac ? 'on power' : 'on battery';
+    if (m.cpu_temp_c != null) {
+      $('m-temp-k').textContent = 'CPU temp';
+      $('m-temp').textContent = m.cpu_temp_c.toFixed(1) + ' °C';
+      $('m-temp-s').textContent = m.thermal_state || '';
+    } else {
+      $('m-temp-k').textContent = 'Thermal';
+      $('m-temp').textContent = m.thermal_state || '–';
+      $('m-temp-s').textContent = '';
+    }
+    $('m-up').textContent = fmtDuration(m.uptime_seconds);
+    $('m-up-s').textContent = m.sampled_at ? 'sampled ' + new Date(m.sampled_at).toLocaleTimeString() : '';
+  }
+
+  function api(method, path, body) {
+    var init = { method: method };
+    if (body !== undefined) {
+      init.headers = { 'content-type': 'application/json' };
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      if (!res.ok) throw new Error(path + ' -> ' + res.status);
+      return res.json();
+    });
+  }
+
+  function setConnected(ok) { $('banner').classList.toggle('show', !ok); }
+
+  function poll() {
+    return api('GET', '/api/status').then(function (st) { render(st); setConnected(true); })
+      .catch(function () { setConnected(false); });
+  }
+
+  function act(path, body) {
+    return api('POST', path, body).then(function (out) {
+      if (out && out.session) { render(out); setConnected(true); } else { return poll(); }
+    }).catch(function () { setConnected(false); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#presets button'), function (b) {
+    b.addEventListener('click', function () {
+      var v = b.getAttribute('data-minutes');
+      act('/api/session/start', { minutes: v === '' ? null : Number(v) });
+    });
+  });
+  $('stop').addEventListener('click', function () { act('/api/session/stop', {}); });
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-action]'), function (b) {
+    b.addEventListener('click', function () { act(b.getAttribute('data-action'), {}); });
+  });
+
+  function disarm() {
+    $('shutdown-confirm').classList.add('hidden');
+    $('shutdown').classList.remove('hidden');
+    if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+  }
+  $('shutdown').addEventListener('click', function () {
+    $('shutdown').classList.add('hidden');
+    $('shutdown-confirm').classList.remove('hidden');
+    armTimer = setTimeout(disarm, ARM_MS);
+  });
+  $('shutdown-confirm').addEventListener('click', function () {
+    disarm();
+    act('/api/shutdown', { confirm: true });
+  });
+
+  poll();
+  setInterval(poll, POLL_MS);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+})();
+</script>
+</body>
+</html>
