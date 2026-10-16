@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::helper::HelperEvents;
+use crate::metrics::Metrics;
 use crate::power::Power;
 use crate::session::{Battery, EndReason, Session, SleepController};
 
@@ -55,6 +56,7 @@ struct Inner<S: SleepController> {
     config: Config,
     helper_connected: bool,
     note: Option<&'static str>,
+    metrics: Option<Metrics>,
 }
 
 pub struct App<S: SleepController, P: Power> {
@@ -74,7 +76,7 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         refresh: impl Fn() + Send + Sync + 'static,
     ) -> Arc<Self> {
         Arc::new(Self {
-            inner: Mutex::new(Inner { session, config, helper_connected: false, note: None }),
+            inner: Mutex::new(Inner { session, config, helper_connected: false, note: None, metrics: None }),
             power,
             config_path,
             lid_registered: AtomicBool::new(false),
@@ -124,6 +126,16 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         if ended.is_some() {
             self.refresh();
         }
+    }
+
+    /// Every `metrics::SAMPLE_INTERVAL` from the tick thread. No refresh: the menu shows none of it.
+    pub fn set_metrics(&self, metrics: Metrics) {
+        self.lock().metrics = Some(metrics);
+    }
+
+    /// The latest sample, for the remote status (phase 4). `None` before the first sample.
+    pub fn metrics(&self) -> Option<Metrics> {
+        self.lock().metrics.clone()
     }
 
     /// Spec 4.6. Decides under the lock, runs the command outside it.
@@ -374,6 +386,26 @@ mod tests {
         app.set_launch_at_login(false);
         assert!(!Config::load(&path).launch_at_login);
         assert!(!app.menu_model(Instant::now()).launch_at_login);
+    }
+
+    #[test]
+    fn metrics_cache_round_trips_without_refresh() {
+        let (app, refreshes, _) = make(Config::default());
+        assert_eq!(app.metrics(), None);
+        let m = Metrics {
+            cpu: None,
+            mem: None,
+            disk: None,
+            battery: Some(Battery { percent: 80, charging: false, on_ac: true }),
+            uptime: Some(Duration::from_secs(60)),
+            cpu_temp_c: Some(48.2),
+            thermal: None,
+            sampled_at: std::time::UNIX_EPOCH,
+        };
+        app.set_metrics(m.clone());
+        assert_eq!(app.metrics(), Some(m));
+        // Nothing in the menu shows metrics, so storing them never triggers a refresh.
+        assert_eq!(refreshes.load(Ordering::SeqCst), 0);
     }
 
     #[test]

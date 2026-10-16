@@ -8,7 +8,7 @@ use awake_app::app::App;
 use awake_app::config::{self, Config};
 use awake_app::helper::{HelperClient, HelperEvents, PING_INTERVAL, SOCKET_PATH, spawn_keeper};
 use awake_app::menu::{self, RealApp};
-use awake_app::metrics::battery;
+use awake_app::metrics::{Collector, SAMPLE_INTERVAL};
 use awake_app::power::SystemPower;
 use awake_app::session::Session;
 use awake_app::sleep::RealSleep;
@@ -41,17 +41,27 @@ impl HelperEvents for Events {
 }
 
 /// Once a second: timer and battery guard, lid polling fallback, per-minute menu refresh.
+/// Every `SAMPLE_INTERVAL` it also takes the metrics sample, which feeds the battery guard.
 fn spawn_tick(app: Arc<RealApp>) {
     std::thread::Builder::new()
         .name("awake-tick".into())
         .spawn(move || {
+            // Built on this thread because the HID temperature client is not `Send`.
+            let mut collector = Collector::host();
+            let sample_every = SAMPLE_INTERVAL.as_secs();
             let mut n: u64 = 0;
             let mut lid_was_closed = false;
             loop {
                 std::thread::sleep(Duration::from_secs(1));
                 n += 1;
-                let battery = if n.is_multiple_of(10) { battery::read() } else { None };
-                app.tick(Instant::now(), battery);
+                let metrics = if n.is_multiple_of(sample_every) { Some(collector.sample()) } else { None };
+                app.tick(Instant::now(), metrics.as_ref().and_then(|m| m.battery));
+                if let Some(m) = metrics {
+                    if n == sample_every {
+                        tracing::info!("first metrics sample: {m:?}");
+                    }
+                    app.set_metrics(m);
+                }
                 if !app.lid_registered()
                     && let Some(c) = lid::read_clamshell()
                 {
