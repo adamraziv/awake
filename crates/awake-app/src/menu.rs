@@ -13,7 +13,7 @@ use objc2_app_kit::{
     NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
     NSWorkspace,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString, ns_string};
+use objc2_foundation::{NSData, NSNotification, NSObject, NSObjectProtocol, NSString, ns_string};
 
 use crate::app::{App, MenuModel, WARNING_NO_HELPER};
 use crate::config;
@@ -34,8 +34,12 @@ const TAG_QUIT: isize = 7;
 /// Timer presets carry `TAG_TIMER_BASE + minutes`.
 const TAG_TIMER_BASE: isize = 1000;
 
-const ICON_IDLE: &str = "moon.zzz";
-const ICON_ACTIVE: &str = "sun.max.fill";
+/// Awake on: an open eye.
+const ICON_ACTIVE: &str = "eye";
+/// Awake off: a closed eye. SF Symbols has none, so it is drawn by `scripts/eye-closed-icon.py`.
+const ICON_IDLE_PDF: &[u8] = include_bytes!("../assets/eye-closed.pdf");
+/// Used only if the PDF fails to load.
+const ICON_IDLE_FALLBACK: &str = "eye.half.closed";
 
 struct TargetIvars {
     app: Arc<RealApp>,
@@ -157,6 +161,13 @@ fn label_item(mtm: MainThreadMarker, title: &str) -> Retained<NSMenuItem> {
     item
 }
 
+/// The closed eye as a template image, so the menu bar tints it like the symbols.
+fn closed_eye(mtm: MainThreadMarker) -> Option<Retained<NSImage>> {
+    let image = NSImage::initWithData(mtm.alloc(), &NSData::with_bytes(ICON_IDLE_PDF))?;
+    image.setTemplate(true);
+    Some(image)
+}
+
 fn symbol(name: &str) -> Option<Retained<NSImage>> {
     let image = NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(name), None)?;
     image.setTemplate(true);
@@ -260,7 +271,7 @@ pub fn install(mtm: MainThreadMarker, app: Arc<RealApp>) {
 
     let status_item = NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
     status_item.setMenu(Some(&menu));
-    let icon_idle = symbol(ICON_IDLE);
+    let icon_idle = closed_eye(mtm).or_else(|| symbol(ICON_IDLE_FALLBACK));
     let icon_active = symbol(ICON_ACTIVE);
 
     let ui = Ui {
@@ -307,6 +318,19 @@ mod tests {
         assert_eq!(preset_title(60), "1 hour");
         assert_eq!(preset_title(120), "2 hours");
         assert_eq!(preset_title(480), "8 hours");
+    }
+
+    #[test]
+    fn eye_icons_load_at_the_same_size() {
+        // SAFETY: test threads are not the main thread, but loading an NSImage from data and
+        // reading its size touch no UI state; the app itself calls this on the main thread.
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let open = symbol(ICON_ACTIVE).expect("SF Symbol eye");
+        let closed = closed_eye(mtm).expect("embedded closed-eye PDF");
+        assert!(closed.isTemplate());
+        let (o, c) = (open.size(), closed.size());
+        assert_eq!((c.width, c.height), (o.width, o.height), "closed eye should fill the open eye's box");
+        assert!(symbol(ICON_IDLE_FALLBACK).is_some());
     }
 
     #[test]
