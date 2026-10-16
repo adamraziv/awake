@@ -5,3 +5,4 @@ pub mod session;
 pub mod helper;
 pub mod sleep;
 pub mod power;
+pub mod metrics;
