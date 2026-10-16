@@ -15,6 +15,8 @@ pub trait SleepController {
     fn helper_sleep_disable(&mut self) -> Result<(), String>;
     /// Ask the helper for `pmset -a disablesleep 0`. Failures are logged, never surfaced (spec 4.2).
     fn helper_sleep_enable(&mut self);
+    /// Ask the helper to shut the Mac down (spec 5). Err when unreachable or refused.
+    fn helper_shutdown(&mut self) -> Result<(), String>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +217,11 @@ impl SleepController for FakeSleep {
     fn helper_sleep_enable(&mut self) {
         self.calls.push("enable");
     }
+
+    fn helper_shutdown(&mut self) -> Result<(), String> {
+        self.calls.push("shutdown");
+        if self.helper_fails { Err("fake helper down".into()) } else { Ok(()) }
+    }
 }
 
 #[cfg(test)]
@@ -390,5 +397,14 @@ mod tests {
         assert_eq!(EndReason::BatteryGuard.note(), Some("Session ended: battery guard"));
         assert_eq!(EndReason::Timer.note(), Some("Session ended: timer"));
         assert_eq!(EndReason::User.note(), None);
+    }
+
+    #[test]
+    fn fake_helper_shutdown_records_and_fails_with_helper() {
+        let mut ok = FakeSleep::default();
+        assert_eq!(ok.helper_shutdown(), Ok(()));
+        assert_eq!(ok.calls, vec!["shutdown"]);
+        let mut down = FakeSleep { helper_fails: true, ..FakeSleep::default() };
+        assert!(down.helper_shutdown().is_err());
     }
 }

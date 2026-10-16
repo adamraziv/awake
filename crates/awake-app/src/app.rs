@@ -161,6 +161,17 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         }
     }
 
+    /// Spec 5: shut down ends the session first, then asks the helper. The error is the helper's.
+    pub fn shutdown(&self) -> Result<(), String> {
+        self.stop_session(EndReason::Shutdown);
+        let result = self.lock().session.sleep_mut().helper_shutdown();
+        match &result {
+            Ok(()) => tracing::info!("shutdown requested from the helper"),
+            Err(e) => tracing::warn!("shutdown request failed: {e}"),
+        }
+        result
+    }
+
     pub fn set_battery_guard(&self, on: bool) {
         {
             let mut g = self.lock();
@@ -217,6 +228,11 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
     #[cfg(test)]
     pub fn with_session<R>(&self, f: impl FnOnce(&mut Session<S>) -> R) -> R {
         f(&mut self.lock().session)
+    }
+
+    #[cfg(test)]
+    pub fn power(&self) -> &P {
+        &self.power
     }
 }
 
@@ -451,5 +467,30 @@ mod tests {
         assert_eq!(format_remaining(Duration::from_secs(3660)), "1 h 1 min left");
         assert_eq!(format_remaining(Duration::from_secs(30)), "1 min left");
         assert_eq!(format_remaining(Duration::ZERO), "0 min left");
+    }
+
+    #[test]
+    fn shutdown_ends_session_then_asks_helper() {
+        let (app, _, _) = make(Config::default());
+        app.start_session(None);
+        assert_eq!(app.shutdown(), Ok(()));
+        assert!(!app.menu_model(Instant::now()).active);
+        let calls = app.with_session(|s| s.sleep().calls.clone());
+        assert_eq!(calls, vec!["assert", "disable", "enable", "release", "shutdown"]);
+    }
+
+    #[test]
+    fn shutdown_reports_helper_failure() {
+        let session = Session::new(FakeSleep { helper_fails: true, ..FakeSleep::default() }, true);
+        let app = App::new(session, FakePower::default(), Config::default(), temp_config(), || {});
+        assert!(app.shutdown().is_err());
+        assert_eq!(app.with_session(|s| s.sleep().calls.clone()), vec!["shutdown"]);
+    }
+
+    #[test]
+    fn power_accessor_sees_fake_calls() {
+        let (app, _, _) = make(Config::default());
+        app.screen_off();
+        assert_eq!(*app.power().calls.lock().unwrap(), vec!["screen_off"]);
     }
 }

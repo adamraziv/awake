@@ -76,6 +76,10 @@ impl SleepController for RealSleep {
             tracing::warn!("sleep_enable not delivered ({e}); the helper's disconnect reset covers it");
         }
     }
+
+    fn helper_shutdown(&mut self) -> Result<(), String> {
+        self.helper.request_ok(Request::Shutdown).map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]

@@ -5,16 +5,21 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// The CLI inside the standalone Tailscale app. The App Store build installs elsewhere, hence the setting.
+pub const DEFAULT_TAILSCALE_CLI: &str = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub battery_guard: bool,
     pub launch_at_login: bool,
+    /// Spec 6.2: the `tailscale` binary used for `whois --json`.
+    pub tailscale_cli: PathBuf,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { battery_guard: true, launch_at_login: true }
+        Self { battery_guard: true, launch_at_login: true, tailscale_cli: PathBuf::from(DEFAULT_TAILSCALE_CLI) }
     }
 }
 
@@ -84,7 +89,7 @@ mod tests {
     #[test]
     fn save_then_load_round_trips_and_creates_parent_dir() {
         let p = temp_path("nested/config.json");
-        let c = Config { battery_guard: false, launch_at_login: false };
+        let c = Config { battery_guard: false, launch_at_login: false, ..Config::default() };
         c.save(&p).unwrap();
         assert_eq!(Config::load(&p), c);
     }
@@ -113,5 +118,14 @@ mod tests {
         assert!(Config::default_path().starts_with(&home));
         assert!(support_dir().ends_with("Library/Application Support/awake"));
         assert!(log_dir().ends_with("Library/Logs/awake"));
+    }
+
+    #[test]
+    fn tailscale_cli_defaults_to_app_bundle_and_round_trips() {
+        assert_eq!(Config::default().tailscale_cli, PathBuf::from(DEFAULT_TAILSCALE_CLI));
+        let p = temp_path("cli.json");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, r#"{ "tailscale_cli": "/opt/homebrew/bin/tailscale" }"#).unwrap();
+        assert_eq!(Config::load(&p).tailscale_cli, PathBuf::from("/opt/homebrew/bin/tailscale"));
     }
 }
