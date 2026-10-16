@@ -11,3 +11,7 @@ path = "src/main.rs"
 [dependencies]
 awake-proto = { path = "../awake-proto" }
 libc = "0.2"
+
+[lib]
+name = "awake_helper"
+path = "src/lib.rs"
