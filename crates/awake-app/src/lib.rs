@@ -7,3 +7,4 @@ pub mod sleep;
 pub mod power;
 pub mod metrics;
 pub mod app;
+pub mod lid;
