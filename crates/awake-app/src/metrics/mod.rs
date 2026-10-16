@@ -7,4 +7,5 @@ pub mod disk;
 mod mach;
 pub mod mem;
 mod sysctl;
+pub mod thermal;
 pub mod uptime;
