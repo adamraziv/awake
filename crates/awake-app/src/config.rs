@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// The CLI inside the standalone Tailscale app. The App Store build installs elsewhere, hence the setting.
-pub const DEFAULT_TAILSCALE_CLI: &str = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
+pub use crate::tailscale::DEFAULT_CLI as DEFAULT_TAILSCALE_CLI;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

@@ -11,3 +11,4 @@ pub mod metrics;
 pub mod power;
 pub mod session;
 pub mod sleep;
+pub mod tailscale;
