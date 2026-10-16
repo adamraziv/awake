@@ -3,5 +3,7 @@
 
 pub mod battery;
 pub mod disk;
+mod mach;
+pub mod mem;
 mod sysctl;
 pub mod uptime;
