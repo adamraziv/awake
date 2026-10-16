@@ -4,3 +4,4 @@ pub mod config;
 pub mod session;
 pub mod helper;
 pub mod sleep;
+pub mod power;
