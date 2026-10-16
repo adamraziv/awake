@@ -16,7 +16,7 @@ if [ "$UID_NUM" -eq 0 ]; then
 fi
 
 echo "==> Building release binaries"
-(cd "$REPO" && cargo build --release -p awake-helper)
+(cd "$REPO" && cargo build --release --workspace)
 
 # ---- helper ----
 echo "==> Installing helper (sudo required)"
@@ -57,3 +57,16 @@ if [ "$reply" != "ok" ]; then
 fi
 echo "helper installed and responding for uid $UID_NUM"
 # ---- end helper ----
+
+# ---- app ----
+echo "==> Building app bundle"
+"$REPO/scripts/build-app.sh"
+if pgrep -x awake-app >/dev/null; then
+    echo "==> Stopping running Awake"
+    pkill -x awake-app || true
+    sleep 1
+fi
+echo "==> Launching Awake"
+open "$HOME/Applications/Awake.app"
+echo "Awake is in the menu bar. Log: ~/Library/Logs/awake/"
+# ---- end app ----
