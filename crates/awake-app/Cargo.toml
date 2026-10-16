@@ -38,3 +38,9 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
 ] }
 objc2-io-kit = { version = "0.3", default-features = false, features = ["std", "libc", "pwr_mgt", "ps"] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
