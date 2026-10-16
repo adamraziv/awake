@@ -2,6 +2,7 @@
 //! `App`; nothing here is shown locally. Spec section 7.
 
 pub mod battery;
+pub mod cpu;
 pub mod disk;
 mod mach;
 pub mod mem;
