@@ -1,0 +1,13 @@
+[package]
+name = "awake-helper"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "awake-helper"
+path = "src/main.rs"
+
+[dependencies]
+awake-proto = { path = "../awake-proto" }
+libc = "0.2"
