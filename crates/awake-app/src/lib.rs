@@ -9,6 +9,7 @@ pub mod login_item;
 pub mod menu;
 pub mod metrics;
 pub mod power;
+pub mod remote;
 pub mod session;
 pub mod sleep;
 pub mod tailscale;
