@@ -54,6 +54,12 @@ pub fn detect_ip() -> Option<Ipv4Addr> {
     found
 }
 
+/// The Tailscale app binary only acts as a CLI when it sees a terminal variable (`TERM`, `SHLVL`
+/// or `TERM_PROGRAM`). Without one it tries to start the GUI instead and prints "The Tailscale GUI
+/// failed to start" on stdout with exit 0. A login item's environment has none of them, so every
+/// child gets this.
+const TERM_VALUE: &str = "dumb";
+
 /// Runs a command and returns its stdout on exit 0. `None` on spawn failure, non-zero exit, or
 /// timeout; a timed-out child is killed. Polled with `try_wait`, so no extra thread is needed; the
 /// output is read after exit, which is fine for `whois` (a few KB) but would deadlock past the
@@ -61,6 +67,7 @@ pub fn detect_ip() -> Option<Ipv4Addr> {
 pub fn run_with_timeout(program: &Path, args: &[&str], timeout: Duration) -> Option<Vec<u8>> {
     let mut child = Command::new(program)
         .args(args)
+        .env("TERM", TERM_VALUE)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -127,7 +134,8 @@ impl Identity for CliIdentity {
             Some(bytes) => {
                 let login = login_name(&bytes);
                 if login.is_none() {
-                    tracing::warn!("tailscale whois {ip}: no LoginName in output");
+                    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(120)]).replace('\n', " ");
+                    tracing::warn!("tailscale whois {ip}: no LoginName in output: {head:?}");
                 }
                 login
             }
@@ -206,6 +214,13 @@ mod tests {
         assert_eq!(run_with_timeout(Path::new("/bin/echo"), &["hi"], CLI_TIMEOUT).as_deref(), Some(&b"hi\n"[..]));
         assert_eq!(run_with_timeout(Path::new("/usr/bin/false"), &[], CLI_TIMEOUT), None);
         assert_eq!(run_with_timeout(Path::new("/nonexistent/binary"), &[], CLI_TIMEOUT), None);
+    }
+
+    #[test]
+    fn run_with_timeout_sets_a_terminal_variable_for_the_cli() {
+        // Simulates the login-item environment: no TERM inherited, so the child must get ours.
+        let out = run_with_timeout(Path::new("/usr/bin/printenv"), &["TERM"], CLI_TIMEOUT);
+        assert_eq!(out.as_deref(), Some(format!("{TERM_VALUE}\n").as_bytes()));
     }
 
     #[test]
