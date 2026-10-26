@@ -14,7 +14,7 @@ Written in Rust (no Swift or Objective-C). The app uses about 11 MB of memory.
 - **Battery guard:** ends the session at 10% on battery (toggle in the menu).
 - **Quick actions:** Screen off and Lock.
 - **Remote page:** a phone-friendly web page served only on your Tailscale address. Start and stop sessions, turn the screen off, lock, shut down, and watch CPU, RAM, disk, battery, CPU temperature, and uptime.
-- **Fail-safe:** if the app quits or crashes, the helper restores normal sleep within seconds.
+- **Fail-safe:** if the app quits or crashes, the helper restores normal sleep within seconds. The helper also restores it when it is stopped (shutdown, `launchctl bootout`) and when it starts. If the helper is removed while a session holds sleep off, nothing can reset it, so the menu shows "Sleep stuck off" with the command to fix it.
 
 ## Requirements
 
@@ -86,6 +86,7 @@ This quits and removes the app, removes the helper, and resets the sleep setting
 
 - **Logs:** Reveal log in the menu, or `~/Library/Logs/awake/`. The helper logs to `/var/log/awake-helper.log`.
 - **"Helper: not running":** run `./scripts/install.sh` again. Without the helper, sessions still prevent idle sleep but closing the lid will sleep the Mac.
+- **"Sleep stuck off":** `disablesleep` is on with no session running, so closing the lid will not sleep the Mac or turn the screen off. Run `sudo pmset -a disablesleep 0`, then `./scripts/install.sh` if the helper is also not running.
 - **"Remote: off (no Tailscale)":** Tailscale is not connected on the Mac.
 - **Check the sleep state:** `pmset -g | grep SleepDisabled` reads 1 during a session and 0 otherwise.
 
