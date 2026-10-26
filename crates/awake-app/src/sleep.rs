@@ -1,5 +1,7 @@
 //! IOKit idle-sleep assertion and the SleepController that uses it plus the helper. Spec 2, 4.1, 4.2.
+//! Also reads whether `disablesleep` is on, for the stuck-sleep warning (spec 4.5).
 
+use std::process::Command;
 use std::sync::Arc;
 
 use awake_proto::Request;
@@ -10,10 +12,29 @@ use objc2_io_kit::{
 };
 
 use crate::helper::HelperClient;
+use crate::power::PMSET;
 use crate::session::SleepController;
 
 pub const ASSERTION_TYPE: &str = "PreventUserIdleSystemSleep";
 pub const ASSERTION_NAME: &str = "Awake session";
+
+/// Whether `disablesleep` is on system-wide. Reading needs no root. `None` if pmset fails.
+pub fn system_sleep_disabled() -> Option<bool> {
+    let out = Command::new(PMSET).arg("-g").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(parse_sleep_disabled(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// `pmset -g` prints `SleepDisabled\t\t1` under "System-wide power settings", and no line at
+/// all on a system that never set it.
+pub fn parse_sleep_disabled(pmset_g: &str) -> bool {
+    pmset_g.lines().any(|line| {
+        let mut words = line.split_whitespace();
+        words.next() == Some("SleepDisabled") && words.next() == Some("1")
+    })
+}
 
 /// Holds a PreventUserIdleSystemSleep assertion. Dropping it releases the assertion.
 pub struct IdleSleepAssertion(IOPMAssertionID);
@@ -98,6 +119,21 @@ mod tests {
         assert_ne!(a.id(), 0);
         assert!(assertions_list().contains(ASSERTION_NAME), "pmset -g assertions should list the assertion");
         drop(a);
+    }
+
+    #[test]
+    fn parse_sleep_disabled_reads_the_system_wide_line() {
+        let on = "System-wide power settings:\n SleepDisabled\t\t1\nCurrently in use:\n standby              1\n";
+        let off = "System-wide power settings:\n SleepDisabled\t\t0\nCurrently in use:\n standby              1\n";
+        let absent = "Currently in use:\n standby              1\n sleep                1\n";
+        assert!(parse_sleep_disabled(on));
+        assert!(!parse_sleep_disabled(off));
+        assert!(!parse_sleep_disabled(absent));
+    }
+
+    #[test]
+    fn system_sleep_disabled_reads_on_host() {
+        assert!(system_sleep_disabled().is_some(), "pmset -g should be readable without root");
     }
 
     #[test]

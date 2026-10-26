@@ -196,7 +196,13 @@ impl Ui {
     fn apply(&self, m: &MenuModel) {
         let mtm = MainThreadMarker::new().expect("menu refresh must run on the main thread");
         self.status_line.setTitle(&NSString::from_str(&m.status_line()));
-        self.warning.setHidden(m.warning().is_none());
+        match m.warning() {
+            Some(text) => {
+                self.warning.setTitle(&NSString::from_str(text));
+                self.warning.setHidden(false);
+            }
+            None => self.warning.setHidden(true),
+        }
         match m.note {
             Some(text) => {
                 self.note.setTitle(&NSString::from_str(text));
@@ -233,6 +239,7 @@ pub fn install(mtm: MainThreadMarker, app: Arc<RealApp>) {
     menu.setDelegate(Some(ProtocolObject::from_ref(&*target)));
 
     let status_line = label_item(mtm, "Awake: Idle");
+    // Retitled from `MenuModel::warning` on every refresh.
     let warning = label_item(mtm, WARNING_NO_HELPER);
     let note = label_item(mtm, "");
     menu.addItem(&status_line);

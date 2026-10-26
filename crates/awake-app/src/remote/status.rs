@@ -114,6 +114,7 @@ mod tests {
             launch_at_login: true,
             note: None,
             remote_url: None,
+            sleep_disabled: false,
         }
     }
 

@@ -12,7 +12,7 @@ use awake_app::metrics::{Collector, SAMPLE_INTERVAL};
 use awake_app::power::SystemPower;
 use awake_app::remote;
 use awake_app::session::Session;
-use awake_app::sleep::RealSleep;
+use awake_app::sleep::{self, RealSleep};
 use awake_app::{lid, logging, login_item};
 use awake_proto::Request;
 use objc2::MainThreadMarker;
@@ -42,7 +42,8 @@ impl HelperEvents for Events {
 }
 
 /// Once a second: timer and battery guard, lid polling fallback, per-minute menu refresh.
-/// Every `SAMPLE_INTERVAL` it also takes the metrics sample, which feeds the battery guard.
+/// Every `SAMPLE_INTERVAL` it also takes the metrics sample, which feeds the battery guard,
+/// and reads `disablesleep` for the stuck-sleep warning.
 fn spawn_tick(app: Arc<RealApp>) {
     std::thread::Builder::new()
         .name("awake-tick".into())
@@ -62,6 +63,9 @@ fn spawn_tick(app: Arc<RealApp>) {
                         tracing::info!("first metrics sample: {m:?}");
                     }
                     app.set_metrics(m);
+                    if let Some(on) = sleep::system_sleep_disabled() {
+                        app.set_sleep_disabled(on);
+                    }
                 }
                 if !app.lid_registered()
                     && let Some(c) = lid::read_clamshell()

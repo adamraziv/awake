@@ -13,6 +13,7 @@ use crate::power::Power;
 use crate::session::{Battery, EndReason, Session, SleepController};
 
 pub const WARNING_NO_HELPER: &str = "Lid-close protection unavailable, helper not running";
+pub const WARNING_SLEEP_STUCK: &str = "Sleep stuck off: run sudo pmset -a disablesleep 0";
 
 /// Everything the menu needs, computed under the lock and rendered outside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,8 @@ pub struct MenuModel {
     pub launch_at_login: bool,
     pub note: Option<&'static str>,
     pub remote_url: Option<String>,
+    /// `disablesleep` is on system-wide, as last read from `pmset -g`.
+    pub sleep_disabled: bool,
 }
 
 impl MenuModel {
@@ -43,8 +46,16 @@ impl MenuModel {
         }
     }
 
+    /// During a session `disablesleep` is meant to be on; while idle it means a reset was missed
+    /// (the helper was stopped mid-session and never came back), and the lid will not sleep the Mac.
     pub fn warning(&self) -> Option<&'static str> {
-        if self.active && !self.lid_protection { Some(WARNING_NO_HELPER) } else { None }
+        if self.active && !self.lid_protection {
+            Some(WARNING_NO_HELPER)
+        } else if !self.active && self.sleep_disabled {
+            Some(WARNING_SLEEP_STUCK)
+        } else {
+            None
+        }
     }
 
     pub fn helper_line(&self) -> &'static str {
@@ -66,6 +77,7 @@ struct Inner<S: SleepController> {
     note: Option<&'static str>,
     metrics: Option<Metrics>,
     remote_url: Option<String>,
+    sleep_disabled: bool,
 }
 
 pub struct App<S: SleepController, P: Power> {
@@ -85,7 +97,15 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         refresh: impl Fn() + Send + Sync + 'static,
     ) -> Arc<Self> {
         Arc::new(Self {
-            inner: Mutex::new(Inner { session, config, helper_connected: false, note: None, metrics: None, remote_url: None }),
+            inner: Mutex::new(Inner {
+                session,
+                config,
+                helper_connected: false,
+                note: None,
+                metrics: None,
+                remote_url: None,
+                sleep_disabled: false,
+            }),
             power,
             config_path,
             lid_registered: AtomicBool::new(false),
@@ -213,6 +233,18 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         self.refresh();
     }
 
+    /// From the tick thread with the latest `pmset -g` reading (spec 4.5). Refreshes only on change.
+    pub fn set_sleep_disabled(&self, on: bool) {
+        {
+            let mut g = self.lock();
+            if g.sleep_disabled == on {
+                return;
+            }
+            g.sleep_disabled = on;
+        }
+        self.refresh();
+    }
+
     fn save_config(&self, config: &Config) {
         if let Err(e) = config.save(&self.config_path) {
             tracing::warn!("could not save config to {}: {e}", self.config_path.display());
@@ -231,6 +263,7 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
             launch_at_login: g.config.launch_at_login,
             note: g.note,
             remote_url: g.remote_url.clone(),
+            sleep_disabled: g.sleep_disabled,
         }
     }
 
@@ -475,6 +508,7 @@ mod tests {
             launch_at_login: true,
             note: None,
             remote_url: None,
+            sleep_disabled: false,
         };
         assert_eq!(m.status_line(), "Awake: Idle");
         assert_eq!(m.helper_line(), "Helper: not running");
@@ -515,6 +549,34 @@ mod tests {
         let (app, _, _) = make(Config::default());
         app.screen_off();
         assert_eq!(*app.power().calls.lock().unwrap(), vec!["screen_off"]);
+    }
+
+    #[test]
+    fn sleep_stuck_warning_shows_only_while_idle() {
+        let (app, refreshes, _) = make(Config::default());
+        app.connected();
+        app.set_sleep_disabled(true);
+        assert_eq!(app.menu_model(Instant::now()).warning(), Some(WARNING_SLEEP_STUCK));
+        // Expected during a session, so no warning then.
+        app.start_session(None);
+        assert_eq!(app.menu_model(Instant::now()).warning(), None);
+        app.stop_session(EndReason::User);
+        assert_eq!(app.menu_model(Instant::now()).warning(), Some(WARNING_SLEEP_STUCK));
+        app.set_sleep_disabled(false);
+        assert_eq!(app.menu_model(Instant::now()).warning(), None);
+        // connected, set true, start, stop, set false.
+        assert_eq!(refreshes.load(Ordering::SeqCst), 5);
+        app.set_sleep_disabled(false);
+        assert_eq!(refreshes.load(Ordering::SeqCst), 5, "same value, no refresh");
+    }
+
+    #[test]
+    fn helper_warning_wins_over_sleep_stuck_during_a_session() {
+        let (app, _, _) = make(Config::default());
+        app.start_session(None);
+        app.lost();
+        app.set_sleep_disabled(true);
+        assert_eq!(app.menu_model(Instant::now()).warning(), Some(WARNING_NO_HELPER));
     }
 
     #[test]
