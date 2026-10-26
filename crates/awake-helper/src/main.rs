@@ -4,6 +4,7 @@ use std::sync::Arc;
 use awake_helper::commands::{SystemRunner, sleep_enable};
 use awake_helper::handler::Handler;
 use awake_helper::server::{bind, serve};
+use awake_helper::signals::reset_on_termination;
 
 const DEFAULT_SOCKET: &str = "/var/run/awake-helper.sock";
 
@@ -22,6 +23,11 @@ fn main() {
         std::process::exit(3);
     }
     let socket = std::env::var("AWAKE_SOCKET").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(DEFAULT_SOCKET));
+
+    // Before `serve` spawns connection threads, so they all inherit the blocked signals.
+    if let Err(e) = reset_on_termination(SystemRunner) {
+        eprintln!("awake-helper: signal reset not installed: {e}");
+    }
 
     let runner = SystemRunner;
     match sleep_enable(&runner) {

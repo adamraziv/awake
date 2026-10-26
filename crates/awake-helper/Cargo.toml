@@ -15,3 +15,8 @@ libc = "0.2"
 [lib]
 name = "awake_helper"
 path = "src/lib.rs"
+
+# Runs its own main so the signal mask matches the real helper; see the file's header.
+[[test]]
+name = "signal_reset"
+harness = false
