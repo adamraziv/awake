@@ -86,6 +86,7 @@ This quits and removes the app, removes the helper, and resets the sleep setting
 
 - **Logs:** Reveal log in the menu, or `~/Library/Logs/awake/`. The helper logs to `/var/log/awake-helper.log`.
 - **"Helper: not running":** run `./scripts/install.sh` again. Without the helper, sessions still prevent idle sleep but closing the lid will sleep the Mac.
+- **Helper gone after running a cleaner app:** cleaners such as [Mole](https://github.com/tw93/Mole) delete root helpers they can't match to an installed app. The bundle ships a copy of the helper in `Contents/Library/LaunchServices` so Mole keeps it. With other cleaners, exclude `/Library/LaunchDaemons/com.voltron.awake-helper.plist` and `/Library/PrivilegedHelperTools/com.voltron.awake-helper`. A running helper keeps working after its files are deleted, so the loss only shows after the next restart.
 - **"Sleep stuck off":** `disablesleep` is on with no session running, so closing the lid will not sleep the Mac or turn the screen off. Run `sudo pmset -a disablesleep 0`, then `./scripts/install.sh` if the helper is also not running.
 - **"Remote: off (no Tailscale)":** Tailscale is not connected on the Mac.
 - **Check the sleep state:** `pmset -g | grep SleepDisabled` reads 1 during a session and 0 otherwise.
