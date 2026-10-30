@@ -171,6 +171,20 @@ impl<S: SleepController> Session<S> {
         }
     }
 
+    /// Spec 4.5. A `pmset -g` reading of `disablesleep`. Off while the session holds lid protection
+    /// means something outside Awake turned it off (`sudo pmset -a disablesleep 0` in a terminal,
+    /// another keep-awake tool), and closing the lid would sleep the Mac. Ask the helper again.
+    pub fn on_sleep_disabled_read(&mut self, on: bool) {
+        if !self.is_active() || !self.lid_protection || on {
+            return;
+        }
+        self.lid_protection = self.sleep.helper_sleep_disable().is_ok();
+        tracing::warn!(
+            "disablesleep was turned off outside Awake during a session, re-sent sleep_disable, lid_protection {}",
+            self.lid_protection
+        );
+    }
+
     pub fn on_helper_lost(&mut self) {
         if self.is_active() {
             self.lid_protection = false;
@@ -390,6 +404,37 @@ mod tests {
         s.on_helper_lost();
         assert!(s.is_active());
         assert!(!s.lid_protection());
+    }
+
+    #[test]
+    fn sleep_turned_off_outside_awake_resends_disable() {
+        let mut s = session();
+        s.start(Instant::now(), None);
+        s.on_sleep_disabled_read(true);
+        assert_eq!(calls(&s), vec!["assert", "disable"], "setting still on, nothing to do");
+        s.on_sleep_disabled_read(false);
+        assert!(s.lid_protection());
+        assert_eq!(calls(&s), vec!["assert", "disable", "disable"]);
+    }
+
+    #[test]
+    fn sleep_turned_off_outside_awake_drops_protection_when_helper_refuses() {
+        let mut s = session();
+        s.start(Instant::now(), None);
+        s.sleep_mut().helper_fails = true;
+        s.on_sleep_disabled_read(false);
+        assert!(s.is_active());
+        assert!(!s.lid_protection());
+        // Already unprotected: the helper warning shows and reconnect retries, not every reading.
+        s.on_sleep_disabled_read(false);
+        assert_eq!(calls(&s), vec!["assert", "disable", "disable"]);
+    }
+
+    #[test]
+    fn sleep_off_reading_while_idle_sends_nothing() {
+        let mut s = session();
+        s.on_sleep_disabled_read(false);
+        assert!(calls(&s).is_empty());
     }
 
     #[test]

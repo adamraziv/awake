@@ -43,7 +43,7 @@ impl HelperEvents for Events {
 
 /// Once a second: timer and battery guard, lid polling fallback, per-minute menu refresh.
 /// Every `SAMPLE_INTERVAL` it also takes the metrics sample, which feeds the battery guard,
-/// and reads `disablesleep` for the stuck-sleep warning.
+/// and reads `disablesleep` for the stuck-sleep warning and to undo outside changes mid-session.
 fn spawn_tick(app: Arc<RealApp>) {
     std::thread::Builder::new()
         .name("awake-tick".into())

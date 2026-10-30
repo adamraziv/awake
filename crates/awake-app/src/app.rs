@@ -233,11 +233,14 @@ impl<S: SleepController + Send + 'static, P: Power + 'static> App<S, P> {
         self.refresh();
     }
 
-    /// From the tick thread with the latest `pmset -g` reading (spec 4.5). Refreshes only on change.
+    /// From the tick thread with the latest `pmset -g` reading (spec 4.5). During a session an off
+    /// reading re-sends `sleep_disable`. Refreshes only when the reading or lid protection changes.
     pub fn set_sleep_disabled(&self, on: bool) {
         {
             let mut g = self.lock();
-            if g.sleep_disabled == on {
+            let protected = g.session.lid_protection();
+            g.session.on_sleep_disabled_read(on);
+            if g.sleep_disabled == on && g.session.lid_protection() == protected {
                 return;
             }
             g.sleep_disabled = on;
@@ -568,6 +571,22 @@ mod tests {
         assert_eq!(refreshes.load(Ordering::SeqCst), 5);
         app.set_sleep_disabled(false);
         assert_eq!(refreshes.load(Ordering::SeqCst), 5, "same value, no refresh");
+    }
+
+    #[test]
+    fn sleep_turned_off_during_a_session_is_turned_back_on() {
+        let (app, refreshes, _) = make(Config::default());
+        app.start_session(None);
+        app.set_sleep_disabled(true);
+        // `sudo pmset -a disablesleep 0` from a terminal mid-session.
+        app.set_sleep_disabled(false);
+        assert!(app.menu_model(Instant::now()).lid_protection);
+        assert_eq!(app.with_session(|s| s.sleep().calls.clone()), vec!["assert", "disable", "disable"]);
+        // Every reading is checked, not only changes, so a tool that keeps turning it off loses each time.
+        app.set_sleep_disabled(false);
+        assert_eq!(app.with_session(|s| s.sleep().calls.clone()), vec!["assert", "disable", "disable", "disable"]);
+        // start, set true, set false.
+        assert_eq!(refreshes.load(Ordering::SeqCst), 3);
     }
 
     #[test]
